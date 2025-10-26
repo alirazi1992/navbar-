@@ -1,0 +1,283 @@
+import { useState, useEffect } from "react";
+import { base44 } from "@/api/base44Client";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Ship, Users, AlertTriangle, FileText, TrendingUp, Activity } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from "recharts";
+
+import StatsCard from "../components/admin/StatsCard";
+import RecentActivity from "../components/admin/RecentActivity";
+import AlertsPanel from "../components/admin/AlertsPanel";
+
+export default function AdminDashboard() {
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const loadUser = async () => {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+    };
+    loadUser();
+  }, []);
+
+  const { data: vessels, isLoading: vesselsLoading } = useQuery({
+    queryKey: ['vessels'],
+    queryFn: () => base44.entities.Vessel.list(),
+    initialData: [],
+  });
+
+  const { data: users, isLoading: usersLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => base44.entities.User.list(),
+    initialData: [],
+  });
+
+  const { data: incidents, isLoading: incidentsLoading } = useQuery({
+    queryKey: ['incidents'],
+    queryFn: () => base44.entities.Incident.list('-created_date', 10),
+    initialData: [],
+  });
+
+  const { data: articles, isLoading: articlesLoading } = useQuery({
+    queryKey: ['articles'],
+    queryFn: () => base44.entities.Article.list(),
+    initialData: [],
+  });
+
+  const { data: notifications, isLoading: notificationsLoading } = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => base44.entities.Notification.list(),
+    initialData: [],
+  });
+
+  // آماده‌سازی داده‌های نمودارها
+  const vesselsByType = vessels.reduce((acc, vessel) => {
+    acc[vessel.type] = (acc[vessel.type] || 0) + 1;
+    return acc;
+  }, {});
+
+  const vesselTypeData = Object.entries(vesselsByType).map(([type, count]) => ({
+    name: type,
+    value: count
+  }));
+
+  const vesselsByStatus = vessels.reduce((acc, vessel) => {
+    acc[vessel.status] = (acc[vessel.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  const vesselStatusData = Object.entries(vesselsByStatus).map(([status, count]) => ({
+    name: status,
+    value: count
+  }));
+
+  const COLORS = ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
+
+  const pendingVessels = vessels.filter(v => v.status === 'در انتظار تایید').length;
+  const activeIncidents = incidents.filter(i => i.status === 'فعال').length;
+
+  return (
+    <div className="p-4 md:p-6 lg:p-8 min-h-screen">
+      <div className="max-w-7xl mx-auto space-y-4 md:space-y-6">
+        {/* هدر */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-white">داشبورد مدیریت</h1>
+            <p className="text-slate-300 mt-2 text-sm md:text-base">
+              خوش آمدید، {user?.full_name || 'مدیر سیستم'}
+            </p>
+          </div>
+          <div className="text-slate-300 text-sm md:text-base">
+            {new Date().toLocaleDateString('fa-IR', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })}
+          </div>
+        </div>
+
+        {/* کارت‌های آماری */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+          <StatsCard
+            title="کل شناورها"
+            value={vessels.length}
+            icon={Ship}
+            color="cyan"
+            trend={`${pendingVessels} در انتظار تایید`}
+          />
+          <StatsCard
+            title="کل کاربران"
+            value={users.length}
+            icon={Users}
+            color="blue"
+            trend={`${users.filter(u => u.role === 'user').length} کاربر عادی`}
+          />
+          <StatsCard
+            title="حوادث فعال"
+            value={activeIncidents}
+            icon={AlertTriangle}
+            color="red"
+            trend={`از ${incidents.length} کل حوادث`}
+          />
+          <StatsCard
+            title="مقالات منتشر شده"
+            value={articles.filter(a => a.status === 'منتشر شده').length}
+            icon={FileText}
+            color="green"
+            trend={`از ${articles.length} کل مقالات`}
+          />
+        </div>
+
+        {/* نمودارها و اطلاعات */}
+        <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
+          {/* نمودارهای اصلی */}
+          <div className="lg:col-span-2 space-y-4 md:space-y-6">
+            <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2 text-base md:text-lg">
+                  <Activity className="w-5 h-5 text-cyan-400" />
+                  توزیع شناورها بر اساس نوع
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {vesselTypeData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
+                    <BarChart data={vesselTypeData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                      <XAxis dataKey="name" stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <YAxis stroke="#94a3b8" style={{ fontSize: '12px' }} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1e293b', 
+                          border: '1px solid #334155',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '14px'
+                        }} 
+                      />
+                      <Bar dataKey="value" fill="#06b6d4" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] md:h-[300px] flex items-center justify-center text-slate-400">
+                    داده‌ای برای نمایش وجود ندارد
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center gap-2 text-base md:text-lg">
+                  <TrendingUp className="w-5 h-5 text-blue-400" />
+                  وضعیت شناورها
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {vesselStatusData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250} className="md:h-[300px]">
+                    <PieChart>
+                      <Pie
+                        data={vesselStatusData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {vesselStatusData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: '#1e293b', 
+                          border: '1px solid #334155',
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '14px'
+                        }} 
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[250px] md:h-[300px] flex items-center justify-center text-slate-400">
+                    داده‌ای برای نمایش وجود ندارد
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* پنل سمت راست */}
+          <div className="space-y-4 md:space-y-6">
+            <AlertsPanel incidents={incidents.slice(0, 5)} />
+            <RecentActivity 
+              vessels={vessels.slice(0, 5)}
+              articles={articles.slice(0, 3)}
+            />
+          </div>
+        </div>
+
+        {/* لیست اعلان‌های اخیر */}
+        <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center gap-2 text-base md:text-lg">
+              <FileText className="w-5 h-5 text-purple-400" />
+              اعلان‌های اخیر
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {notifications.length > 0 ? (
+              <div className="space-y-3">
+                {notifications.slice(0, 5).map((notif) => (
+                  <div 
+                    key={notif.id} 
+                    className="flex items-start gap-4 p-3 md:p-4 bg-slate-700/30 rounded-lg hover:bg-slate-700/50 transition-colors"
+                  >
+                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
+                      notif.priority === 'فوری' ? 'bg-red-500' :
+                      notif.priority === 'بالا' ? 'bg-orange-500' :
+                      notif.priority === 'متوسط' ? 'bg-yellow-500' :
+                      'bg-green-500'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-medium text-white text-sm md:text-base">{notif.title}</h4>
+                      <p className="text-xs md:text-sm text-slate-300 mt-1 line-clamp-2">{notif.message}</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <span className="text-xs px-2 py-1 bg-cyan-500/20 text-cyan-400 rounded">
+                          {notif.type}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          {notif.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-slate-400">
+                هیچ اعلانی ثبت نشده است
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

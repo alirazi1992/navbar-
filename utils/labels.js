@@ -37,12 +37,23 @@ export const notificationStatusLabels = {
 export const userRoleLabels = {
   admin: { fa: "مدیر" },
   client: { fa: "مشتری" },
+  primary: { fa: "حساب اصلی" },
 };
 
 export const userStatusLabels = {
   Active: { fa: "فعال" },
   Suspended: { fa: "غیرفعال" },
   Invited: { fa: "دعوت شده" },
+  Locked: { fa: "قفل شده" },
+};
+
+export const subUserRoleLabels = {
+  operations_manager: { fa: "مدیر عملیات" },
+  finance_controller: { fa: "کنترل مالی" },
+  port_supervisor: { fa: "سرپرست بندر" },
+  safety_officer: { fa: "مسئول ایمنی" },
+  customer_success: { fa: "پشتیبانی مشتری" },
+  staff: { fa: "کارشناس" },
 };
 
 export const articleStatusLabels = {

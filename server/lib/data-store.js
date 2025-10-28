@@ -1,12 +1,25 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { customAlphabet } from "nanoid";
+import { randomUUID } from "node:crypto";
 import { seedData } from "../data/seed-data.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.resolve(__dirname, "../data/db.json");
-const nanoid = customAlphabet("1234567890abcdefghijklmnopqrstuvwxyz", 10);
+const buildRandomString = (length) => {
+  const create = () =>
+    (typeof randomUUID === "function"
+      ? randomUUID().replace(/-/g, "")
+      : Math.random().toString(36).slice(2)) || "";
+
+  let buffer = create();
+  while (buffer.length < length) {
+    buffer += create();
+  }
+  return buffer.slice(0, length);
+};
+
+const createPrefixedId = (prefix, length) => `${prefix}-${buildRandomString(length)}`;
 
 const deepClone = (value) => {
   if (typeof structuredClone === "function") {
@@ -151,7 +164,7 @@ export async function createDataStore() {
         creditDueDate: base.creditDueDate ? toIsoDate(base.creditDueDate) : null,
         creditLimit: base.creditLimit,
         creditUsed: base.creditUsed,
-        id: payload.id ?? `pu-${nanoid(8)}`,
+        id: payload.id ?? createPrefixedId("pu", 10),
         lockedByCredit: false,
         createdAt: now,
         updatedAt: now,
@@ -191,7 +204,7 @@ export async function createDataStore() {
       const base = normalizeSubPayload(payload);
       const record = {
         ...base,
-        id: payload.id ?? `su-${nanoid(10)}`,
+        id: payload.id ?? createPrefixedId("su", 12),
         primaryUserId,
         lockedByCredit: Boolean(primary.lockedByCredit),
         createdAt: now,

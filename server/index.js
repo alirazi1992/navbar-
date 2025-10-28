@@ -1,128 +1,206 @@
-import express from "express";
-import cors from "cors";
-import morgan from "morgan";
+import { createServer } from "node:http";
+import { URL } from "node:url";
 import { createDataStore } from "./lib/data-store.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
+const ALLOWED_METHODS = "GET,POST,PATCH,OPTIONS";
+
+const createCorsHeaders = () => ({
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": ALLOWED_METHODS,
+  "Access-Control-Allow-Headers": "Content-Type",
+});
+
+const sendJson = (res, status, payload) => {
+  const body = payload == null ? "" : JSON.stringify(payload);
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    ...createCorsHeaders(),
+  });
+  res.end(body);
+};
+
+const parseJsonBody = async (req) => {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    return {};
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    const err = new Error("Invalid JSON body");
+    err.status = 400;
+    throw err;
+  }
+};
+
+const matchRoute = (pathname, template) => {
+  const pathParts = pathname.split("/").filter(Boolean);
+  const templateParts = template.split("/").filter(Boolean);
+  if (pathParts.length !== templateParts.length) {
+    return null;
+  }
+  const params = {};
+  for (let index = 0; index < templateParts.length; index += 1) {
+    const templatePart = templateParts[index];
+    const pathPart = pathParts[index];
+    if (templatePart.startsWith(":")) {
+      params[templatePart.slice(1)] = decodeURIComponent(pathPart);
+      continue;
+    }
+    if (templatePart !== pathPart) {
+      return null;
+    }
+  }
+  return params;
+};
 
 async function bootstrap() {
   const store = await createDataStore();
-  const app = express();
 
-  app.use(cors());
-  app.use(express.json());
-  app.use(morgan("dev"));
+  const server = createServer(async (req, res) => {
+    const method = (req.method ?? "GET").toUpperCase();
+    const requestUrl = req.url
+      ? new URL(req.url, `http://${req.headers.host ?? `localhost:${PORT}`}`)
+      : null;
 
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
-  });
-
-  app.get("/api/summary", async (req, res, next) => {
-    try {
-      const summary = await store.getSummary();
-      res.json(summary);
-    } catch (error) {
-      next(error);
+    if (!requestUrl) {
+      sendJson(res, 400, { message: "Invalid request" });
+      return;
     }
-  });
 
-  app.get("/api/primary-users", async (req, res, next) => {
-    try {
-      const includeSubUsers = req.query.includeSubUsers === "true";
-      const users = await store.listPrimaryUsers(includeSubUsers);
-      res.json(users);
-    } catch (error) {
-      next(error);
+    if (method === "OPTIONS") {
+      res.writeHead(204, createCorsHeaders());
+      res.end();
+      return;
     }
-  });
 
-  app.post("/api/primary-users", async (req, res, next) => {
-    try {
-      const created = await store.createPrimaryUser(req.body ?? {});
-      res.status(201).json(created);
-    } catch (error) {
-      next(error);
-    }
-  });
+    const { pathname, searchParams } = requestUrl;
 
-  app.get("/api/primary-users/:id", async (req, res, next) => {
     try {
-      const includeSubUsers = req.query.includeSubUsers === "true";
-      const primary = await store.getPrimaryUser(req.params.id, includeSubUsers);
-      if (!primary) {
-        res.status(404).json({ message: "Primary user not found" });
+      if (method === "GET" && pathname === "/api/health") {
+        sendJson(res, 200, { status: "ok" });
         return;
       }
-      res.json(primary);
-    } catch (error) {
-      next(error);
-    }
-  });
 
-  app.patch("/api/primary-users/:id", async (req, res, next) => {
-    try {
-      const updated = await store.updatePrimaryUser(req.params.id, req.body ?? {});
-      if (!updated) {
-        res.status(404).json({ message: "Primary user not found" });
+      if (method === "GET" && pathname === "/api/summary") {
+        const summary = await store.getSummary();
+        sendJson(res, 200, summary);
         return;
       }
-      res.json(updated);
-    } catch (error) {
-      next(error);
-    }
-  });
 
-  app.post("/api/primary-users/:id/sub-users", async (req, res, next) => {
-    try {
-      const created = await store.createSubUser(req.params.id, req.body ?? {});
-      res.status(201).json(created);
-    } catch (error) {
-      next(error);
-    }
-  });
+      if (pathname === "/api/primary-users") {
+        if (method === "GET") {
+          const includeSubUsers = searchParams.get("includeSubUsers") === "true";
+          const users = await store.listPrimaryUsers(includeSubUsers);
+          sendJson(res, 200, users);
+          return;
+        }
 
-  app.get("/api/primary-users/:id/sub-users", async (req, res, next) => {
-    try {
-      const subUsers = await store.listSubUsers(req.params.id);
-      res.json(subUsers);
-    } catch (error) {
-      next(error);
-    }
-  });
+        if (method === "POST") {
+          const payload = await parseJsonBody(req);
+          const created = await store.createPrimaryUser(payload ?? {});
+          sendJson(res, 201, created);
+          return;
+        }
 
-  app.get("/api/sub-users/:id", async (req, res, next) => {
-    try {
-      const sub = await store.getSubUser(req.params.id);
-      if (!sub) {
-        res.status(404).json({ message: "Sub user not found" });
+        sendJson(res, 405, { message: "Method not allowed" });
         return;
       }
-      res.json(sub);
-    } catch (error) {
-      next(error);
-    }
-  });
 
-  app.patch("/api/sub-users/:id", async (req, res, next) => {
-    try {
-      const updated = await store.updateSubUser(req.params.id, req.body ?? {});
-      if (!updated) {
-        res.status(404).json({ message: "Sub user not found" });
+      const primaryMatch = matchRoute(pathname, "/api/primary-users/:id");
+      if (primaryMatch) {
+        if (method === "GET") {
+          const includeSubUsers = searchParams.get("includeSubUsers") === "true";
+          const primary = await store.getPrimaryUser(primaryMatch.id, includeSubUsers);
+          if (!primary) {
+            sendJson(res, 404, { message: "Primary user not found" });
+            return;
+          }
+          sendJson(res, 200, primary);
+          return;
+        }
+
+        if (method === "PATCH") {
+          const payload = await parseJsonBody(req);
+          const updated = await store.updatePrimaryUser(primaryMatch.id, payload ?? {});
+          if (!updated) {
+            sendJson(res, 404, { message: "Primary user not found" });
+            return;
+          }
+          sendJson(res, 200, updated);
+          return;
+        }
+
+        sendJson(res, 405, { message: "Method not allowed" });
         return;
       }
-      res.json(updated);
+
+      const primarySubRoute = matchRoute(pathname, "/api/primary-users/:id/sub-users");
+      if (primarySubRoute) {
+        if (method === "GET") {
+          const subUsers = await store.listSubUsers(primarySubRoute.id);
+          sendJson(res, 200, subUsers);
+          return;
+        }
+
+        if (method === "POST") {
+          const payload = await parseJsonBody(req);
+          const created = await store.createSubUser(primarySubRoute.id, payload ?? {});
+          sendJson(res, 201, created);
+          return;
+        }
+
+        sendJson(res, 405, { message: "Method not allowed" });
+        return;
+      }
+
+      const subMatch = matchRoute(pathname, "/api/sub-users/:id");
+      if (subMatch) {
+        if (method === "GET") {
+          const subUser = await store.getSubUser(subMatch.id);
+          if (!subUser) {
+            sendJson(res, 404, { message: "Sub user not found" });
+            return;
+          }
+          sendJson(res, 200, subUser);
+          return;
+        }
+
+        if (method === "PATCH") {
+          const payload = await parseJsonBody(req);
+          const updated = await store.updateSubUser(subMatch.id, payload ?? {});
+          if (!updated) {
+            sendJson(res, 404, { message: "Sub user not found" });
+            return;
+          }
+          sendJson(res, 200, updated);
+          return;
+        }
+
+        sendJson(res, 405, { message: "Method not allowed" });
+        return;
+      }
+
+      sendJson(res, 404, { message: "Not found" });
     } catch (error) {
-      next(error);
+      const status = error?.status ?? 500;
+      const message = error?.message ?? "Unexpected error";
+      if (status >= 500) {
+        console.error("Unexpected error while handling request", error);
+      }
+      sendJson(res, status, { message });
     }
   });
 
-  app.use((err, req, res, next) => {
-    console.error(err);
-    const status = err.status ?? 500;
-    res.status(status).json({ message: err.message ?? "Unexpected error" });
-  });
-
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
   });
 }

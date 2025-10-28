@@ -18,13 +18,13 @@ export function createPageUrl(pageName) {
   return pageRoutes[pageName] ?? "/";
 }
 
-const dateFormatter = new Intl.DateTimeFormat("en-GB", {
+const dateFormatter = new Intl.DateTimeFormat("fa-IR", {
   year: "numeric",
-  month: "short",
+  month: "long",
   day: "2-digit",
 });
 
-const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+const timeFormatter = new Intl.DateTimeFormat("fa-IR", {
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
@@ -48,5 +48,5 @@ export function formatNumber(value, options = {}) {
   if (value == null || Number.isNaN(Number(value))) {
     return "—";
   }
-  return new Intl.NumberFormat("en-US", options).format(value);
+  return new Intl.NumberFormat("fa-IR", { useGrouping: true, ...options }).format(value);
 }

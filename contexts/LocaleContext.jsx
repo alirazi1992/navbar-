@@ -18,6 +18,7 @@ export function LocaleProvider({ children }) {
     if (typeof document !== "undefined") {
       document.documentElement.lang = "fa";
       document.documentElement.dir = "rtl";
+      document.body?.setAttribute("dir", "rtl");
     }
     if (typeof window !== "undefined") {
       localStorage.setItem("locale", locale);
